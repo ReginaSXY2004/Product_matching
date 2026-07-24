@@ -10,7 +10,10 @@ __pycache__/
 # Playwright and debug outputs
 debug/
 
+# Persistent browser profile (cookies, cache, login state)
+taobao_profile/
+test_profile/
+
 # Generated data files
-data/search_results.xlsx
-data/search_log.json
+data/*
 data/taobao_storage_state.json
