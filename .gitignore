@@ -1,0 +1,16 @@
+﻿# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+
+# Playwright and debug outputs
+debug/
+
+# Generated data files
+data/search_results.xlsx
+data/search_log.json
+data/taobao_storage_state.json
