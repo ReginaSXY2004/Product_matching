@@ -57,7 +57,8 @@ def batch_search(
                     keyword=title,
                     topk=topk,
                     page=page,
-                    context=context
+                    context=context,
+                    check_login=(index == 0)
                 )
 
                 cost_time = round(time.time() - start_time, 2)

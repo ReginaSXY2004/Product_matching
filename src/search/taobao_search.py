@@ -141,7 +141,7 @@ def _detect_captcha(page, body_text: str) -> bool:
         return False
 
 
-def _search_single_page(page, keyword, topk):
+def _search_single_page(page, keyword, topk, check_login=True):
     """
     单个商品的搜索逻辑，返回结果及元数据
     返回格式: {
@@ -165,27 +165,28 @@ def _search_single_page(page, keyword, topk):
 
     print("正在搜索:", keyword)
 
-    page.goto(login_url, wait_until="domcontentloaded")
-    page.wait_for_timeout(5000)
-    _print_page_state(page, "after initial goto")
+    if check_login:
+        page.goto(login_url, wait_until="domcontentloaded")
+        page.wait_for_timeout(5000)
+        _print_page_state(page, "after initial goto")
 
-    if _page_needs_login(page):
-        if storage_state_path.exists():
-            print("保存的登录状态失效，删除后重新登录")
-            storage_state_path.unlink(missing_ok=True)
-            page.goto(login_url, wait_until="domcontentloaded")
-            page.wait_for_timeout(5000)
+        if _page_needs_login(page):
+            if storage_state_path.exists():
+                print("保存的登录状态失效，删除后重新登录")
+                storage_state_path.unlink(missing_ok=True)
+                page.goto(login_url, wait_until="domcontentloaded")
+                page.wait_for_timeout(5000)
 
-        print("请扫码登录淘宝，登录完成后请耐心等待页面跳转")
-        if _wait_for_login(page, timeout=180):
-            print("检测到已登录，保存当前 storage_state")
-            _print_page_state(page, "after login")
+            print("请扫码登录淘宝，登录完成后请耐心等待页面跳转")
+            if _wait_for_login(page, timeout=180):
+                print("检测到已登录，保存当前 storage_state")
+                _print_page_state(page, "after login")
+            else:
+                print("登录超时，请检查扫码流程或网络状态")
         else:
-            print("登录超时，请检查扫码流程或网络状态")
-    else:
-        if not storage_state_path.exists():
-            print("检测到已登录状态，正在保存 storage_state")
-            _print_page_state(page, "already logged in")
+            if not storage_state_path.exists():
+                print("检测到已登录状态，正在保存 storage_state")
+                _print_page_state(page, "already logged in")
 
     page.goto(search_url, wait_until="networkidle")
     page.wait_for_timeout(5000)
@@ -258,7 +259,7 @@ def _search_single_page(page, keyword, topk):
     return results
 
 
-def search_taobao(keyword, topk=5, page=None, context=None):
+def search_taobao(keyword, topk=5, page=None, context=None, check_login=True):
     """输入关键词，返回淘宝搜索结果TopK
     
     如果 page 和 context 已提供（批量搜索模式）：
@@ -271,7 +272,7 @@ def search_taobao(keyword, topk=5, page=None, context=None):
     
     if page is not None and context is not None:
         # 批量搜索模式：复用已有的 page
-        return _search_single_page(page, keyword, topk)
+        return _search_single_page(page, keyword, topk, check_login=check_login)
     
     # 单次搜索模式：启动并关闭
     results = []
