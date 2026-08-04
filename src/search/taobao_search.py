@@ -1,7 +1,9 @@
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 import urllib.parse
+from urllib.parse import unquote
 import time
+
 
 from src.config import DEBUG_HTML_DIR, DEBUG_SCREENSHOTS_DIR, STORAGE_STATE_PATH
 
@@ -45,25 +47,45 @@ def _page_needs_login(page) -> bool:
 
 
 def _has_login_cookie(page) -> bool:
-    try:
-        cookies = page.evaluate('document.cookie')
-    except Exception:
-        return False
-
     login_cookie_names = ["cookie2", "t", "cna", "sgcookie", "thw", "tracknick"]
-    for name in login_cookie_names:
-        if f"{name}=" in cookies:
-            return True
+    try:
+        context_cookies = page.context.cookies([
+            "https://www.taobao.com",
+            "https://s.taobao.com",
+            "https://login.taobao.com",
+        ])
+        for cookie in context_cookies:
+            if cookie.get("name") in login_cookie_names:
+                return True
+    except Exception:
+        pass
+
+    try:
+        page_cookies = page.evaluate('document.cookie')
+        for name in login_cookie_names:
+            if f"{name}=" in page_cookies:
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _save_login_state_if_ready(page, storage_state_path, reason: str) -> bool:
+    if _has_login_cookie(page):
+        _save_storage_state(page.context, storage_state_path, reason)
+        return True
     return False
 
 
 def _page_is_logged_in(page) -> bool:
     try:
+        if _has_login_cookie(page):
+            return True
+
         url = page.url
         if "login.taobao.com" in url or "passport.taobao.com" in url:
             return False
-        if _has_login_cookie(page):
-            return True
         body = page.locator("body").inner_text(timeout=5000)
     except Exception:
         return False
@@ -92,24 +114,36 @@ def _save_storage_state(context, storage_state_path, reason: str):
 
 
 def _create_context(p, storage_state_path):
-    browser = p.chromium.launch(
+
+    # Google Chrome浏览器，现在已被风控
+    # context = p.chromium.launch_persistent_context(
+    #     user_data_dir="data/taobao_profile",
+    #     headless=False,
+    #     channel="chrome",
+    #     viewport={"width":1280,"height":900}
+    # )
+
+    # Edge浏览器
+    context = p.chromium.launch_persistent_context(
+        user_data_dir="data/taobao_edge_profile",
         headless=False,
-        channel="chrome"
+        channel="msedge",
+        viewport={"width": 1280, "height": 900},
+        args=[
+            "--disable-blink-features=AutomationControlled"
+        ]
     )
 
-    if storage_state_path.exists():
-        print("使用已保存的登录状态：", storage_state_path)
-        context = browser.new_context(
-            storage_state=str(storage_state_path),
-            viewport={"width": 1280, "height": 900}
-        )
-    else:
-        print("未找到登录状态文件，将进入扫码登录流程")
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900}
-        )
-
-    return browser, context
+    context.add_init_script("""
+    Object.defineProperty(
+        navigator,
+        'webdriver',
+        {
+            get: () => undefined
+        }
+    )
+    """)
+    return None, context
 
 
 def _detect_captcha(page, body_text: str) -> bool:
@@ -133,7 +167,7 @@ def _detect_captcha(page, body_text: str) -> bool:
         ]
         
         for keyword in captcha_keywords:
-            if keyword in body_text:
+            if keyword in body_text or "punish" in url or "captcha" in url:
                 return True
         
         return False
@@ -158,42 +192,82 @@ def _search_single_page(page, keyword, topk, check_login=True):
         "url": ""
     }
     
+    keyword = unquote(str(keyword)).strip().strip("'\"").strip()
     storage_state_path = _get_storage_state_path()
     
     login_url = "https://login.taobao.com/member/login.jhtml"
-    search_url = "https://s.taobao.com/search?q=" + urllib.parse.quote(keyword)
+    search_url = "https://s.taobao.com/search"
 
     print("正在搜索:", keyword)
 
     if check_login:
-        page.goto(login_url, wait_until="domcontentloaded")
+        page.goto("https://www.taobao.com", wait_until="domcontentloaded")
         page.wait_for_timeout(5000)
-        _print_page_state(page, "after initial goto")
 
-        if _page_needs_login(page):
-            if storage_state_path.exists():
-                print("保存的登录状态失效，删除后重新登录")
-                storage_state_path.unlink(missing_ok=True)
-                page.goto(login_url, wait_until="domcontentloaded")
-                page.wait_for_timeout(5000)
+        if not _page_is_logged_in(page):
 
-            print("请扫码登录淘宝，登录完成后请耐心等待页面跳转")
+            print("当前未登录，跳转登录页面")
+
+            page.goto(
+                "https://login.taobao.com/member/login.jhtml",
+                wait_until="domcontentloaded"
+            )
+
+            page.wait_for_timeout(5000)
+
+            print("请扫码登录淘宝")
+
             if _wait_for_login(page, timeout=180):
-                print("检测到已登录，保存当前 storage_state")
-                _print_page_state(page, "after login")
+                print("登录成功")
+                _save_login_state_if_ready(
+                    page,
+                    storage_state_path,
+                    "after login"
+                )
             else:
-                print("登录超时，请检查扫码流程或网络状态")
+                print("登录失败")
         else:
-            if not storage_state_path.exists():
-                print("检测到已登录状态，正在保存 storage_state")
-                _print_page_state(page, "already logged in")
+            print("已有登录状态")
+            print("cookies:", page.context.cookies())
 
-    page.goto(search_url, wait_until="networkidle")
-    page.wait_for_timeout(5000)
+    print("FINAL SEARCH URL:", search_url)
+    page.goto(search_url)
+    print("打开搜索页后URL:", page.url)
+    print("INPUT数量:", page.locator("input").count())
+
+    for i in range(page.locator("input").count()):
+        inp = page.locator("input").nth(i)
+        print(
+            i,
+            inp.get_attribute("name"),
+            inp.get_attribute("placeholder"),
+            inp.is_visible()
+        )
+
+    page.wait_for_timeout(2000)
+
+    search_box = page.locator("input[name='q']")
+
+    print("search_box count:", search_box.count())
+    
+    search_box.click()
+
+    page.keyboard.type(keyword, delay=150)
+
+    print("输入后的值:", search_box.input_value())
+
+    page.wait_for_timeout(1000)
+
+    page.keyboard.press("Enter")
+
+    page.wait_for_timeout(8000)
+
+    print("CURRENT URL:", page.url)
 
     # 获取搜索结果页面的完整文本（用于后续商品匹配）
     try:
         raw_text = page.locator("body").inner_text()
+        
         results["raw_text"] = raw_text
     except Exception as exc:
         print(f"无法获取页面文本: {exc}")
@@ -282,11 +356,17 @@ def search_taobao(keyword, topk=5, page=None, context=None, check_login=True):
         browser, context = _create_context(p, storage_state_path)
         page = context.new_page()
 
+        page.on(
+            "response",
+            lambda response: print(response.status, response.url)
+            if ("mtop" in response.url or "search" in response.url)
+            else None
+        )
+
         results = _search_single_page(page, keyword, topk)
         
         # 单次模式才保存 storage_state
         _save_storage_state(context, storage_state_path, "single search end")
         context.close()
-        browser.close()
 
     return results

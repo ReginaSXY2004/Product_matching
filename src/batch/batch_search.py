@@ -46,6 +46,7 @@ def batch_search(
 
             goods_id = row["goodsId"]
             title = row["商品名称"]
+            print(repr(title))
 
             print(f"\n[{index+1}/{total}] 搜索: {title}")
 
@@ -90,7 +91,7 @@ def batch_search(
                     )
 
                 # ✓ 每个商品搜索后立即保存登录状态，避免下一个商品需要重新登录
-                _save_storage_state(context, STORAGE_STATE_PATH, f"after search {goods_id}")
+                # _save_storage_state(context, STORAGE_STATE_PATH, f"after search {goods_id}")
 
                 if captcha_detected:
                     print(f"⚠️ 警告: 检测到反爬机制，获取 {len(candidates)} 个候选，耗时 {cost_time}s")
@@ -118,7 +119,6 @@ def batch_search(
         # 批量搜索结束，保存 storage_state 并关闭
         _save_storage_state(context, STORAGE_STATE_PATH, "batch search end")
         context.close()
-        browser.close()
 
     batch_cost_time = round(time.time() - batch_start_time, 2)
 

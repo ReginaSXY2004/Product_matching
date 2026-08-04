@@ -12,6 +12,7 @@ debug/
 
 # Persistent browser profile (cookies, cache, login state)
 taobao_profile/
+taobao_profile_old/
 test_profile/
 
 # Generated data files
