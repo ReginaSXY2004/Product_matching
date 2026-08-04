@@ -47,28 +47,29 @@ def _page_needs_login(page) -> bool:
 
 
 def _has_login_cookie(page) -> bool:
-    login_cookie_names = ["cookie2", "t", "cna", "sgcookie", "thw", "tracknick"]
-    try:
-        context_cookies = page.context.cookies([
-            "https://www.taobao.com",
-            "https://s.taobao.com",
-            "https://login.taobao.com",
-        ])
-        for cookie in context_cookies:
-            if cookie.get("name") in login_cookie_names:
-                return True
-    except Exception:
-        pass
+
+    login_cookie_names = [
+        "cookie2",
+        "tracknick",
+        "lgc",
+        "lid"
+    ]
 
     try:
-        page_cookies = page.evaluate('document.cookie')
-        for name in login_cookie_names:
-            if f"{name}=" in page_cookies:
-                return True
-    except Exception:
-        pass
+        cookies = page.context.cookies()
 
-    return False
+        names = {
+            c["name"]
+            for c in cookies
+        }
+
+        return (
+            "cookie2" in names
+            and "tracknick" in names
+        )
+
+    except Exception:
+        return False
 
 
 def _save_login_state_if_ready(page, storage_state_path, reason: str) -> bool:
@@ -79,20 +80,24 @@ def _save_login_state_if_ready(page, storage_state_path, reason: str) -> bool:
 
 
 def _page_is_logged_in(page) -> bool:
+    """
+    判断淘宝是否登录
+    优先相信cookie，不依赖页面文字
+    """
+
     try:
         if _has_login_cookie(page):
             return True
 
         url = page.url
-        if "login.taobao.com" in url or "passport.taobao.com" in url:
+
+        if "login.taobao.com" in url:
             return False
-        body = page.locator("body").inner_text(timeout=5000)
-    except Exception:
+
         return False
 
-    if "请登录" in body or "扫码登录" in body or "登录淘宝" in body:
+    except Exception:
         return False
-    return True
 
 
 def _wait_for_login(page, timeout=180) -> bool:
@@ -117,33 +122,41 @@ def _create_context(p, storage_state_path):
 
     # Google Chrome浏览器，现在已被风控
     # context = p.chromium.launch_persistent_context(
-    #     user_data_dir="data/taobao_profile",
+    #     user_data_dir="data/taobao_chrome_profile",
     #     headless=False,
     #     channel="chrome",
-    #     viewport={"width":1280,"height":900}
+    #     viewport={"width":1280,"height":900},
+    #     args=[
+    #         "--disable-blink-features=AutomationControlled"
+    #     ]
     # )
 
     # Edge浏览器
-    context = p.chromium.launch_persistent_context(
-        user_data_dir="data/taobao_edge_profile",
+    browser = p.chromium.launch(
         headless=False,
         channel="msedge",
-        viewport={"width": 1280, "height": 900},
         args=[
             "--disable-blink-features=AutomationControlled"
         ]
     )
 
-    context.add_init_script("""
-    Object.defineProperty(
-        navigator,
-        'webdriver',
-        {
-            get: () => undefined
-        }
-    )
-    """)
-    return None, context
+    if storage_state_path.exists():
+        context = browser.new_context(
+            storage_state=str(storage_state_path),
+            viewport={
+                "width":1280,
+                "height":900
+            }
+        )
+    else:
+        context = browser.new_context(
+            viewport={
+                "width":1280,
+                "height":900
+            }
+        )
+
+    return browser, context
 
 
 def _detect_captcha(page, body_text: str) -> bool:
@@ -202,16 +215,19 @@ def _search_single_page(page, keyword, topk, check_login=True):
 
     if check_login:
         page.goto("https://www.taobao.com", wait_until="domcontentloaded")
-        page.wait_for_timeout(5000)
+        page.wait_for_timeout(8000)
 
         if not _page_is_logged_in(page):
+            print("登录状态检查失败，等待确认...")
+            page.wait_for_timeout(3000)
 
-            print("当前未登录，跳转登录页面")
+            if not _page_is_logged_in(page):
+                print("确认未登录，需要扫码")
 
-            page.goto(
-                "https://login.taobao.com/member/login.jhtml",
-                wait_until="domcontentloaded"
-            )
+                page.goto(
+                    "https://login.taobao.com/member/login.jhtml",
+                    wait_until="domcontentloaded"
+                )
 
             page.wait_for_timeout(5000)
 
