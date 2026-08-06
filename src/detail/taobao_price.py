@@ -1,129 +1,135 @@
-import json
 import re
-from playwright.sync_api import sync_playwright
+import json
 
 
-def get_taobao_price(product_url, storage_path):
+def parse_price_response(response_text):
+
+    """
+    解析淘宝API返回价格
+    """
 
     result = []
 
-    with sync_playwright() as p:
+    try:
 
-        browser = p.chromium.launch(
-            headless=False,
-            channel="msedge",
-            args=[
-                "--disable-blink-features=AutomationControlled"
-            ]
+        text = re.sub(
+            r'^[^(]*\(',
+            '',
+            response_text
         )
 
-        context = browser.new_context(
-            storage_state=str(storage_path),
-            viewport={
-                "width":1280,
-                "height":900
-            }
+        text = re.sub(
+            r'\);?\s*$',
+            '',
+            text
         )
 
-        page = context.new_page()
+
+        data = json.loads(text)
 
 
-        def handle_response(response):
-
-            if "mtop.taobao.pcdetail.data.adjust" not in response.url:
-                return
-
-            try:
-                text = response.text()
-
-                # JSONP去括号
-                text = re.sub(r'^[^(]*\(', '', text)
-                text = re.sub(r'\);?\s*$', '', text)
-
-                data = json.loads(text)
+        sku_info = (
+            data
+            .get("data", {})
+            .get("skuCore", {})
+            .get("sku2info", {})
+        )
 
 
-                sku_info = data["data"]["skuCore"]["sku2info"]
+        result = extract_price(sku_info)
 
 
-                for sku_id, info in sku_info.items():
-
-                    price = info.get("price")
-                    sub_price = info.get("subPrice")
-
-
-                    if price or sub_price:
-
-                        result.append(
-                        {
-                            "sku_id": sku_id,
-                            "优惠前": (
-                                price.get("priceText")
-                                if price else None
-                            ),
-                            "补贴后": (
-                                sub_price.get("priceText")
-                                if sub_price else None
-                            )
-                        }
-                        )
+    except Exception as e:
+        print(
+            "API价格解析失败:",
+            e
+        )
 
 
-            except Exception as e:
-                print("解析失败:", e)
+    return result
 
 
 
-        page.on("response", handle_response)
+def parse_price_from_html(content):
+
+    """
+    解析页面HTML里的sku2info
+    """
+
+    result = []
 
 
-        page.goto(product_url)
+    try:
 
-        # 等待接口触发
-        page.wait_for_timeout(5000)
-
-        all_items = page.locator("[class*='valueItem']")
-
-        sku_items = []
-
-        for i in range(all_items.count()):
-
-            item = all_items.nth(i)
-
-            cls = item.get_attribute("class")
-
-            if (
-                "valueItem--" in cls
-                and "isDisabled" not in cls
-            ):
-                sku_items.append(item)
-
-        print("真实SKU数量:", len(sku_items))
-
-        for item in sku_items:
-            spec = item.locator("span").first.get_attribute("title")
-            print(spec)
-
-        selected = sku_items[0]
+        match = re.search(
+            r'"sku2info":(\{.*?\}),"skuItem"',
+            content
+        )
 
 
-        selected_spec = selected.locator(
-            "span[class*='valueItemText']"
-        ).first.get_attribute("title")
+        if not match:
+            return result
 
 
+        sku_info = json.loads(
+            match.group(1)
+        )
 
-        print("选择规格:", selected_spec)
 
-        selected.click()
+        result = extract_price(
+            sku_info
+        )
 
-        for item in result:
-            item["规格"] = selected_spec
+
+    except Exception as e:
+
+        print(
+            "HTML价格解析失败:",
+            e
+        )
+
+
+    return result
 
 
 
-        context.close()
-        browser.close()
+def extract_price(sku_info):
+
+    """
+    公共价格提取逻辑
+    """
+
+    result = []
+
+
+    for sku_id, info in sku_info.items():
+
+
+        if sku_id == "0":
+            continue
+
+
+        price = info.get("price")
+        sub_price = info.get("subPrice")
+
+
+        if price or sub_price:
+
+            result.append(
+                {
+                    "sku_id": sku_id,
+
+                    "优惠前":
+                        price.get("priceText")
+                        if price
+                        else None,
+
+                    "补贴后":
+                        sub_price.get("priceText")
+                        if sub_price
+                        else None
+                }
+            )
 
 
     return result
