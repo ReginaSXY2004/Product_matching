@@ -52,7 +52,7 @@
 
 ### 方式 1: 小规模测试（推荐）
 ```bash
-cd c:\Users\Regina Sun\Documents\GitHub\Agent\Product_matching
+cd Product_matching
 
 # 默认测试 10 个商品，Top5 候选
 python -m src.batch.batch_search

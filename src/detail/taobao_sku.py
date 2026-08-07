@@ -1,10 +1,34 @@
 from playwright.sync_api import sync_playwright
 
-from detail.taobao_mapping import parse_sku_mapping
-from detail.taobao_price import parse_price_response
-from detail.taobao_merge import merge_sku_price
+from src.detail.taobao_mapping import parse_sku_mapping
+from src.detail.taobao_price import parse_price_response
+from src.detail.taobao_merge import merge_sku_price
 
 from pathlib import Path
+
+def create_taobao_page(storage_path):
+
+    p = sync_playwright().start()
+
+    browser = p.chromium.launch(
+        headless=False,
+        channel="msedge",
+        args=[
+            "--disable-blink-features=AutomationControlled"
+        ]
+    )
+
+    context = browser.new_context(
+        storage_state=str(storage_path),
+        viewport={
+            "width":1280,
+            "height":900
+        }
+    )
+
+    page = context.new_page()
+
+    return p, browser, page
 
 
 def click_first_available_sku(page):
@@ -67,141 +91,113 @@ def click_first_available_sku(page):
     return False
 
 
-def get_taobao_sku_prices(url, storage_path):
+def get_taobao_sku_prices(page, url):
 
     price_result = []
-
-
-    with sync_playwright() as p:
-
-        browser = p.chromium.launch(
-            headless=False,
-            channel="msedge",
-            args=[
-                "--disable-blink-features=AutomationControlled"
-            ]
-        )
-
-        context = browser.new_context(
-            storage_state=str(storage_path),
-            viewport={
-                "width":1280,
-                "height":900
-            }
-        )
-
-        page = context.new_page()
-
-
 
         # ==========================
         # 监听价格接口
         # ==========================
 
-        def handle_response(response):
+    def handle_response(response):
 
-            if (
-                "mtop.taobao.pcdetail.data.adjust"
-                not in response.url
-            ):
-                return
-
-
-            try:
-
-                text = response.text()
+        if (
+            "mtop.taobao.pcdetail.data.adjust"
+            not in response.url
+        ):
+            return
 
 
-                prices = parse_price_response(
-                    text
-                )
+        try:
 
-                price_result.extend(prices)
-
-            except Exception as e:
-
-                print(
-                    "response解析失败:",
-                    e
-                )
+            text = response.text()
 
 
+            prices = parse_price_response(
+                text
+            )
 
-        page.on(
-            "response",
-            handle_response
-        )
+            price_result.extend(prices)
+
+        except Exception as e:
+
+            print(
+                "response解析失败:",
+                e
+            )
 
 
-
-        # ==========================
-        # 打开页面
-        # ==========================
-
-        page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=30000
-        )
-
-        page.wait_for_timeout(
-            5000
-        )
+    page.on(
+        "response",
+        handle_response
+    )
 
 
 
-        # ==========================
-        # SKU规格映射
-        # ==========================
+    # ==========================
+    # 打开页面
+    # ==========================
 
-        content = page.content()
+    page.goto(
+        url,
+        wait_until="domcontentloaded",
+        timeout=30000
+    )
 
-        print(
-            "sku2info:",
-            "sku2info" in content
-        )
-
-        print(
-            "price:",
-            '"price"' in content
-        )
-
-
-        sku_mapping = parse_sku_mapping(
-            content
-        )
-
-
-        print(
-            "SKU Mapping:"
-        )
-
-        print(
-            sku_mapping
-        )
-
-        # ==========================
-        # 自动触发skuClick
-        # ==========================
-
-        click_first_available_sku(page)
-
-
-        page.wait_for_timeout(
-            3000
-        )
-
-        # ==========================
-        # 等待价格接口
-        # ==========================
-
-        page.wait_for_timeout(
-            3000
-        )
+    page.wait_for_timeout(
+        5000
+    )
 
 
 
-        browser.close()
+    # ==========================
+    # SKU规格映射
+    # ==========================
+
+    content = page.content()
+
+    print(
+        "sku2info:",
+        "sku2info" in content
+    )
+
+    print(
+        "price:",
+        '"price"' in content
+    )
+
+
+    sku_mapping = parse_sku_mapping(
+        content
+    )
+
+
+    print(
+        "SKU Mapping:"
+    )
+
+    print(
+        sku_mapping
+    )
+
+    # ==========================
+    # 自动触发skuClick
+    # ==========================
+
+    click_first_available_sku(page)
+
+
+    page.wait_for_timeout(
+        3000
+    )
+
+    # ==========================
+    # 等待价格接口
+    # ==========================
+
+    page.wait_for_timeout(
+        3000
+    )
 
 
 
@@ -223,6 +219,12 @@ def get_taobao_sku_prices(url, storage_path):
     result = merge_sku_price(
         price_result,
         sku_mapping
+    )
+
+
+    page.remove_listener(
+        "response",
+        handle_response
     )
 
 
