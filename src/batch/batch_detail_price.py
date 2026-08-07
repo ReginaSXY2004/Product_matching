@@ -125,5 +125,5 @@ def batch_detail_price(max_products=None):
 if __name__ == "__main__":
 
     batch_detail_price(
-        # max_products=5
+        max_products=1
     )
