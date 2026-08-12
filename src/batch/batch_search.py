@@ -4,7 +4,8 @@ import random
 import json
 
 from src.config import DATA_DIR, OUTPUT_DIR, STORAGE_STATE_PATH
-from src.search.taobao_search import search_taobao, _create_context, _save_storage_state
+from src.search.taobao_search import search_taobao
+from src.taobao_login import _create_context, _save_storage_state
 from playwright.sync_api import sync_playwright
 
 # 输入文件
@@ -158,5 +159,5 @@ if __name__ == "__main__":
 
         # 第一次建议只测试10个
         # None代表全部100个
-        max_products=None
+        max_products=1
     )

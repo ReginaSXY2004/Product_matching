@@ -2,6 +2,13 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 import urllib.parse
 from urllib.parse import unquote
+from src.taobao_login import (
+    _create_context,
+    _page_is_logged_in,
+    _wait_for_login,
+    _save_login_state_if_ready,
+    _save_storage_state
+)
 import time
 
 
