@@ -11,7 +11,7 @@ from src.taobao_login import (
 )
 import time
 
-
+from src.taobao_utils import _detect_captcha
 from src.config import DEBUG_HTML_DIR, DEBUG_SCREENSHOTS_DIR, STORAGE_STATE_PATH
 
 DEBUG = False
@@ -166,35 +166,6 @@ def _create_context(p, storage_state_path):
     return browser, context
 
 
-def _detect_captcha(page, body_text: str) -> bool:
-    """检测是否出现了滑块验证、登录异常等反爬机制"""
-    try:
-        url = page.url
-        # 检测 URL 中的关键词
-        if "check.taobao.com" in url or "passport" in url or "seccodelogin" in url:
-            return True
-        
-        # 检测页面文本中的反爬关键词
-        captcha_keywords = [
-            "滑块验证",
-            "拖动滑块",
-            "安全验证",
-            "验证码",
-            "我是人类",
-            "suspected robot",
-            "请输入验证码",
-            "perform suspicious"
-        ]
-        
-        for keyword in captcha_keywords:
-            if keyword in body_text or "punish" in url or "captcha" in url:
-                return True
-        
-        return False
-    except Exception:
-        return False
-
-
 def _search_single_page(page, keyword, topk, check_login=True):
     """
     单个商品的搜索逻辑，返回结果及元数据
@@ -340,18 +311,14 @@ def _search_single_page(page, keyword, topk, check_login=True):
         c for c in keyword if c.isalnum() or c in (" ", "_", "-")
     ).strip()[:20] or "taobao"
 
+    # 仅保留必要的截图，避免大容量文本存储
     page.screenshot(path=str(DEBUG_SCREENSHOTS_DIR / f"{safe_name}.png"))
 
-    html = page.content()
-
-    html_path = DEBUG_HTML_DIR / f"{safe_name}.html"
-    text_path = DEBUG_HTML_DIR / f"{safe_name}.txt"
-
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(html)
-
-    with open(text_path, "w", encoding="utf-8") as f:
-        f.write(raw_text)
+    if captcha_detected:
+        html = page.content()
+        html_path = DEBUG_HTML_DIR / f"{safe_name}.html"
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html)
 
     return results
 

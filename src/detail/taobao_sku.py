@@ -12,6 +12,8 @@ from src.taobao_login import (
     _wait_for_login,
     _save_login_state_if_ready
 )
+from src.taobao_utils import detect_captcha
+
 from urllib.parse import urlparse, parse_qs
 
 from pathlib import Path
@@ -161,6 +163,8 @@ def get_taobao_sku_prices(page, url):
     # ==========================
     # 优先从 HTML 解析价格
     # ==========================
+    if detect_captcha(page):
+        raise Exception("淘宝验证码拦截")
     content = page.content()
     print("sku2info:", "sku2info" in content)
     print("price:", '"price"' in content)

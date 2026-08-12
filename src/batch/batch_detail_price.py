@@ -72,16 +72,37 @@ def batch_detail_price(max_products=None):
 
         except Exception as e:
 
+            error_msg = str(e)
+
             print(
                 "失败:",
-                e
+                error_msg
             )
 
+
+            # 淘宝验证码，停止整个batch
+            if "验证码" in error_msg:
+                print("检测到淘宝验证码，停止任务")
+                
+                failed_results.append(
+                    {
+                        "goodsId": goods_id,
+                        "url": url,
+                        "status": "captcha",
+                        "error": "淘宝验证码拦截"
+                    }
+                )
+
+                break
+
+
+            # 普通失败继续
             failed_results.append(
                 {
                     "goodsId": goods_id,
                     "url": url,
-                    "error": str(e)
+                    "status": "parse_failed",
+                    "error": "没有获取价格"
                 }
             )
 
