@@ -29,7 +29,7 @@ def main():
     if max_products:
         print(f"采集前 {max_products} 个商品，每个取 Top10 候选...")
     else:
-        print("采集所有商品，每个取 Top10 候选...")
+        print("采集所有商品，每个取 Top5 候选...")
     
     print("\n输出文件:")
     print("  - data/output/search_results.xlsx  (竞品候选库)")
@@ -37,7 +37,7 @@ def main():
     print("\n开始采集...")
     print("="*60)
     
-    batch_search(topk=10, max_products=max_products)
+    batch_search(topk=5, max_products=max_products)
 
 if __name__ == "__main__":
     main()

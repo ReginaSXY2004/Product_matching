@@ -2,11 +2,23 @@ import pandas as pd
 import time
 import random
 import json
+import re
 
 from src.config import DATA_DIR, OUTPUT_DIR, STORAGE_STATE_PATH
 from src.search.taobao_search import search_taobao
-from src.taobao_login import _create_context, _save_storage_state
+from src.taobao_login import _create_context, _save_storage_state, _page_is_logged_in, _wait_for_login, _save_login_state_if_ready
 from playwright.sync_api import sync_playwright
+
+
+def extract_competitor_id_from_url(url):
+    """
+    从淘宝/天猫 URL 中提取商品 ID
+    例如: https://item.taobao.com/item.htm?id=123456789 -> 123456789
+    """
+    match = re.search(r'[?&]id=([0-9]+)', url)
+    if match:
+        return match.group(1)
+    return None
 
 # 输入文件
 INPUT_FILE = DATA_DIR / "test_products.xlsx"
@@ -19,7 +31,7 @@ LOG_FILE = OUTPUT_DIR / "search_log.json"
 
 
 def batch_search(
-        topk=3,
+        topk=5,
         max_products=None
 ):
 
@@ -75,6 +87,33 @@ def batch_search(
         browser, context = _create_context(p, STORAGE_STATE_PATH)
         page = context.new_page()
 
+        # ===== 前置登录检查 =====
+        print("\n" + "="*50)
+        print("开始前置登录检查...")
+        print("="*50)
+        
+        page.goto("https://www.taobao.com", wait_until="domcontentloaded")
+        page.wait_for_timeout(5000)
+        
+        if not _page_is_logged_in(page):
+            print("未检测到有效登录状态，需要重新登录")
+            page.goto("https://login.taobao.com/member/login.jhtml", wait_until="domcontentloaded")
+            print("请在浏览器中完成登录（手机号/验证码）...")
+            
+            if not _wait_for_login(page, timeout=300):
+                print("❌ 登录超时（5分钟），程序退出")
+                context.close()
+                browser.close()
+                return
+            
+            print("✓ 登录成功，保存状态")
+            _save_login_state_if_ready(page, STORAGE_STATE_PATH, "batch search pre-check")
+        else:
+            print("✓ 检测到有效登录状态")
+        
+        print("="*50 + "\n")
+        # ===== 登录检查完成 =====
+
         for index, row in products.iterrows():
 
             goods_id = str(row["goodsId"])
@@ -100,7 +139,7 @@ def batch_search(
                     topk=topk,
                     page=page,
                     context=context,
-                    check_login=(index == 0)
+                    check_login=False
                 )
 
                 cost_time = round(time.time() - start_time, 2)
@@ -120,13 +159,16 @@ def batch_search(
 
                 # 保存候选结果
                 for rank, item in enumerate(candidates, start=1):
+                    url = item.get("url", "")
+                    competitor_id = extract_competitor_id_from_url(url)
                     all_results.append(
                         {
-                            "goodsId": goods_id,
+                            "goods_id": goods_id,
                             "source_title": title,
+                            "competitor_id": competitor_id,
                             "rank": rank,
                             "candidate_title": item.get("title", ""),
-                            "url": item.get("url", "")
+                            "url": url
                         }
                     )
 
@@ -136,7 +178,14 @@ def batch_search(
                     print("日志已记录，等待人工验证码完成后按 Enter 继续，输入 q 可退出当前批次")
                     user_cmd = input("请完成淘宝验证码后按 Enter 继续，输入 q 退出: ").strip()
                     if user_cmd.lower() == "q":
-                        print("用户选择退出当前批次，停止继续下一条商品")
+                        print("用户选择退出当前批次，保存已爬取结果后停止")
+                        # 保存当前结果
+                        result_df = pd.DataFrame(all_results)
+                        result_df.to_excel(OUTPUT_FILE, index=False)
+                        with open(LOG_FILE, "w", encoding="utf-8") as f:
+                            json.dump(logs, f, ensure_ascii=False, indent=2)
+                        print(f"已保存 {len(all_results)} 条候选结果到: {OUTPUT_FILE}")
+                        print(f"日志已保存到: {LOG_FILE}")
                         break
                     print("人工确认完成，继续下一条商品")
                 else:
@@ -198,7 +247,7 @@ if __name__ == "__main__":
 
 
     batch_search(
-        topk=10,
+        topk=5,
 
         # 第一次建议只测试10个
         # None代表全部100个

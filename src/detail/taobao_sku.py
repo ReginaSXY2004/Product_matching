@@ -1,5 +1,6 @@
 from playwright.sync_api import sync_playwright
 
+from src.detail.human_behavior import simulate_browsing
 from src.detail.taobao_mapping import parse_sku_mapping
 from src.detail.taobao_price import (
     parse_price_response,
@@ -12,11 +13,13 @@ from src.taobao_login import (
     _wait_for_login,
     _save_login_state_if_ready
 )
-from src.taobao_utils import detect_captcha
+from src.taobao_utils import _detect_captcha
 
 from urllib.parse import urlparse, parse_qs
 
 from pathlib import Path
+
+import random
 
 
 def create_taobao_page(storage_path):
@@ -29,31 +32,6 @@ def create_taobao_page(storage_path):
     )
 
     page = context.new_page()
-
-    # ===== 登录检查 =====
-
-    page.goto(
-        "https://www.taobao.com",
-        wait_until="domcontentloaded"
-    )
-
-    page.wait_for_timeout(5000)
-
-    if not _page_is_logged_in(page):
-
-        print("淘宝登录失效，请扫码")
-
-        page.goto(
-            "https://login.taobao.com/member/login.jhtml"
-        )
-
-        if _wait_for_login(page):
-
-            _save_login_state_if_ready(
-                page,
-                storage_path,
-                "detail login"
-            )
 
     return p, browser, page
 
@@ -157,15 +135,22 @@ def get_taobao_sku_prices(page, url):
     # 打开页面并等待初始化
     # ==========================
     url = clean_taobao_url(url)
-    page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(2000)
+
+    page.goto(
+        url,
+        wait_until="domcontentloaded",
+        timeout=30000
+    )
+    if _detect_captcha(page):
+        raise Exception("淘宝验证码拦截")
+
+    simulate_browsing(page)
 
     # ==========================
     # 优先从 HTML 解析价格
     # ==========================
-    if detect_captcha(page):
-        raise Exception("淘宝验证码拦截")
     content = page.content()
+
     print("sku2info:", "sku2info" in content)
     print("price:", '"price"' in content)
 

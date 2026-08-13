@@ -1,4 +1,5 @@
 from pathlib import Path
+import random
 from playwright.sync_api import sync_playwright
 import urllib.parse
 from urllib.parse import unquote
@@ -238,7 +239,7 @@ def _search_single_page(page, keyword, topk, check_login=True):
             inp.is_visible()
         )
 
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(random.randint(1500,4000))
 
     search_box = page.locator("input[name='q']")
 
@@ -246,7 +247,7 @@ def _search_single_page(page, keyword, topk, check_login=True):
     
     search_box.click()
 
-    page.keyboard.type(keyword, delay=150)
+    page.keyboard.type(keyword, delay=random.randint(80,250))
 
     print("输入后的值:", search_box.input_value())
 
@@ -254,9 +255,18 @@ def _search_single_page(page, keyword, topk, check_login=True):
 
     page.keyboard.press("Enter")
 
-    page.wait_for_timeout(8000)
+    page.wait_for_timeout(random.randint(6000,12000))
 
     print("CURRENT URL:", page.url)
+
+    #鼠标往下滚动
+    page.mouse.wheel(
+    0,
+    random.randint(300,700)
+    )
+    page.wait_for_timeout(
+        random.randint(1000,3000)
+    )
 
     # 获取搜索结果页面的完整文本（用于后续商品匹配）
     try:
